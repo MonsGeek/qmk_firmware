@@ -58,15 +58,7 @@
         {HS_BLACK, HS_RED, HS_GREEN, HS_BLUE, HS_YELLOW, HS_PURPLE, HS_CYAN, HS_WHITE}
 #endif
 
-#define RGB_MATRIX_BAT_VAL      150
 
-#define IM_BAT_REQ_LEVEL1_VAL   50
-#define IM_BAT_REQ_LEVEL1_COLOR 0x00, RGB_MATRIX_BAT_VAL, 0x00
-
-#define IM_BAT_REQ_LEVEL2_VAL   30
-#define IM_BAT_REQ_LEVEL2_COLOR 0x00, RGB_MATRIX_BAT_VAL, 0x00
-
-#define IM_BAT_REQ_LEVEL3_COLOR RGB_MATRIX_BAT_VAL, 0x00, 0x00
 
 void rgbrec_read_current_channel(uint8_t channel);
 void rgbrec_set_close_all(uint8_t h, uint8_t s, uint8_t v);
@@ -80,4 +72,3 @@ void eeconfig_init_user_datablock(void);
 bool rgbrec_register_record(uint16_t keycode, keyrecord_t *record);
 void record_rgbmatrix_increase(uint8_t *last_mode);
 uint8_t record_color_hsv(bool status);
-void query(void);
