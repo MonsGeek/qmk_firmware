@@ -18,6 +18,7 @@
         ]
     },
     "features": {
+        "bootmagic": true,
         "combo": false,
         "command": false,
         "console": false,
