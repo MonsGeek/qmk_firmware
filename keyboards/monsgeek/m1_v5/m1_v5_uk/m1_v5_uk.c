@@ -47,6 +47,7 @@ bool enable_bat_indicators   = true;
 uint32_t bat_indicator_cnt   = 0;
 static uint32_t ee_clr_timer = 0;
 bool test_white_light_flag = false;
+bool im_test_rate_flag     = false;
 bool lower_sleep = false;
 uint8_t buff[]   = {14, 8, 2, 1, 1, 1, 1, 1, 1, 1, 0};
 
