@@ -308,31 +308,3 @@ uint8_t record_color_hsv(bool status) {
     eeprom_write_byte(ptr, rgb_hsv_index);
     return rgb_hsv_index;
 }
-
-bool rk_bat_req_flag;
-
-void query(void) {
-    if (rk_bat_req_flag) {
-#ifdef RGBLIGHT_ENABLE
-        for (uint8_t i = 0; i < (RGB_MATRIX_LED_COUNT - RGBLED_NUM); i++) {
-            rgb_matrix_set_color(i, 0, 0, 0);
-        }
-#else
-        rgb_matrix_set_color_all(0x00, 0x00, 0x00);
-#endif
-        for (uint8_t i = 0; i < 10; i++) {
-            uint8_t mi_index[10] = RGB_MATRIX_BAT_INDEX_MAP;
-            if ((i < (*md_getp_bat() / 10)) || (i < 1)) {
-                if (*md_getp_bat() >= (IM_BAT_REQ_LEVEL1_VAL)) {
-                    rgb_matrix_set_color(mi_index[i], IM_BAT_REQ_LEVEL1_COLOR);
-                } else if (*md_getp_bat() >= (IM_BAT_REQ_LEVEL2_VAL)) {
-                    rgb_matrix_set_color(mi_index[i], IM_BAT_REQ_LEVEL2_COLOR);
-                } else {
-                    rgb_matrix_set_color(mi_index[i], IM_BAT_REQ_LEVEL3_COLOR);
-                }
-            } else {
-                rgb_matrix_set_color(mi_index[i], 0x00, 0x00, 0x00);
-            }
-        }
-    }
-}
