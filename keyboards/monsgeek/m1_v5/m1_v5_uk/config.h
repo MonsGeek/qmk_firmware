@@ -59,6 +59,14 @@
 #define SD1_TX_PIN                          C10
 #define SD1_RX_PIN                          C11
 
+/* USB Suspend – controls LED shutdown timing when the host PC suspends.
+ * USB_SUSPEND_WAKEUP_DELAY: ms to wait after host resume before re-init (QMK default: 200).
+ * USB_POWER_DOWN_DELAY:     ms after host suspend signal before LEDs are powered off.
+ *   QMK default is 10 000 ms; reduced to 2 000 ms for quicker power-down.
+ *   See suspend_power_down_kb() for the pin toggling that happens at power-down. */
+#define USB_SUSPEND_WAKEUP_DELAY            200
+#define USB_POWER_DOWN_DELAY                2000
+
 /* Encoder */
 #define ENCODER_MAP_KEY_DELAY               1
 
@@ -83,7 +91,15 @@
 /* rgb_record */
 #define ENABLE_RGB_MATRIX_RGBR_PLAY
 #define RGBREC_CHANNEL_NUM         4
-#define EECONFIG_CONFINFO_USE_SIZE (4 + 16)
+/* EEPROM user datablock layout (see eeconfig_confinfo_default()):
+ *   confinfo.raw                   – 4 bytes (flags, channel, last_mode, etc.)
+ *   [4 + 16 reserved]              – original confinfo area (kept for alignment)
+ *   [+4] sat_index                 – 1 byte: current saturation step index
+ *   [+5] hue_index                 – 1 byte: current hue palette index
+ *   remaining bytes reserved for future use
+ * Total confinfo block: 4 + 16 + 16 = 36 bytes.
+ * Increased from 4 + 16 to accommodate the new hue/sat index storage. */
+#define EECONFIG_CONFINFO_USE_SIZE (4 + 16 + 16)
 #define EECONFIG_RGBREC_USE_SIZE   (RGBREC_CHANNEL_NUM * MATRIX_ROWS * MATRIX_COLS * 2)
 #define EECONFIG_USER_DATA_SIZE    (EECONFIG_RGBREC_USE_SIZE + EECONFIG_CONFINFO_USE_SIZE)
 #define RGBREC_EECONFIG_ADDR       (uint8_t *)(EECONFIG_USER_DATABLOCK)

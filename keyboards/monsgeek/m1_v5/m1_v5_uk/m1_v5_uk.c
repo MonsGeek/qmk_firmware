@@ -95,6 +95,17 @@ void eeconfig_confinfo_default(void) {
     eeconfig_init_user_datablock();
     eeconfig_confinfo_update(confinfo.raw);
 
+    /* Sync EEPROM hue/sat indices with the defaults from keyboard.json
+     * so that HUE+/HUE- cycling starts from the correct position after EE_CLR */
+    {
+        uint8_t hue_idx = find_hue_index(RGB_MATRIX_DEFAULT_HUE);
+        uint8_t sat_idx = find_sat_index(hue_idx, RGB_MATRIX_DEFAULT_SAT);
+        uint8_t *sat_ptr = (uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 4);
+        uint8_t *hue_ptr = (uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 5);
+        eeprom_write_byte(sat_ptr, sat_idx);
+        eeprom_write_byte(hue_ptr, hue_idx);
+    }
+
 #ifdef RGBLIGHT_ENABLE
     rgblight_mode(buff[0]);
 #endif
@@ -184,12 +195,18 @@ void suspend_power_down_kb(void) {
 #    ifdef LED_POWER_EN_PIN
     gpio_write_pin_low(LED_POWER_EN_PIN);
 #    endif
+    /* Disable LED boost converter during suspend to cut standby power draw.
+     * USB_POWER_DOWN_DELAY (config.h) controls how quickly we enter this
+     * state after the host signals suspend (default was 10 s, set to 2 s). */
+    gpio_write_pin_low(HS_LED_BOOSTING_PIN);
 
     suspend_power_down_user();
 }
 
 void suspend_wakeup_init_kb(void) {
 
+    /* Re-enable LED boost converter so the RGB matrix lights up on wake. */
+    gpio_write_pin_high(HS_LED_BOOSTING_PIN);
 #    ifdef LED_POWER_EN_PIN
     if (rgb_matrix_get_val() != 0) gpio_write_pin_high(LED_POWER_EN_PIN);
 #    endif
@@ -202,7 +219,7 @@ void suspend_wakeup_init_kb(void) {
 bool lpwr_is_allow_timeout_hook(void) {
 
     if (wireless_get_current_devs() == DEVS_USB) {
-        return false;
+        return (USB_DRIVER.state == USB_SUSPENDED);
     }
 
     return true;
@@ -370,6 +387,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         case RP_P1:
         case RP_P2:
         case RGB_MOD:
+        case RGB_RMOD:
             break;
         default: {
             if (rgbrec_is_started()) {
@@ -382,7 +400,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
         } break;
     }
 
-    if (rgbrec_is_started() && (!(keycode == RP_P0 || keycode == RP_P1 || keycode == RP_P2 || keycode == RP_END || keycode == RGB_MOD || keycode == MO(_FL) || keycode == MO(_MFL)))) {
+    if (rgbrec_is_started() && (!(keycode == RP_P0 || keycode == RP_P1 || keycode == RP_P2 || keycode == RP_END || keycode == RGB_MOD || keycode == RGB_RMOD || keycode == MO(_FL) || keycode == MO(_MFL)))) {
 
         return false;
     }
@@ -659,7 +677,12 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
 
             return false;
         } break;
-        case RGB_MOD: {
+        /* MODE+ / MODE-: cycle through the curated mode list.
+         * Both keycodes share the same logic: if currently in the custom
+         * recording playback mode (RGBR_PLAY), exit back to a normal mode
+         * first. Otherwise, advance/reverse through rgbmatrix_buff[]. */
+        case RGB_MOD:
+        case RGB_RMOD: {
             if (record->event.pressed) {
                 rgb_blink_dir();
                 if (rgb_matrix_get_mode() == RGB_MATRIX_CUSTOM_RGBR_PLAY) {
@@ -677,18 +700,32 @@ bool process_record_kb(uint16_t keycode, keyrecord_t *record) {
                     start_hsv = rgb_matrix_get_hsv();
                     return false;
                 }
-                record_rgbmatrix_increase(&(confinfo.record_last_mode));
+                if (keycode == RGB_MOD) {
+                    record_rgbmatrix_increase(&(confinfo.record_last_mode));
+                } else {
+                    record_rgbmatrix_decrease(&(confinfo.record_last_mode));
+                }
                 eeconfig_confinfo_update(confinfo.raw);
                 start_hsv = rgb_matrix_get_hsv();
             }
 
             return false;
         } break;
+        /* HUE+ / HUE-: cycle through the 9-hue palette.
+         * Delegates to record_color_hue() which also applies matching
+         * hardware-corrected saturation from rgb_sats[][]. */
         case RGB_HUI: {
             if (record->event.pressed) {
-                record_color_hsv(true);
+                record_color_hue(true);
+                rgb_blink_dir();
             }
-
+            return false;
+        } break;
+        case RGB_HUD: {
+            if (record->event.pressed) {
+                record_color_hue(false);
+                rgb_blink_dir();
+            }
             return false;
         } break;
         case KC_LCMD: {

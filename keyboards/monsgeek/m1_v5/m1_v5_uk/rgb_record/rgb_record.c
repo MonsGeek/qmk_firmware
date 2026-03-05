@@ -23,15 +23,84 @@ static uint16_t rgbrec_hs_lists[] = RGB_RECORD_HS_LISTS;
 static uint8_t rgbrec_buffer[MATRIX_ROWS * MATRIX_COLS * 2];
 
 //clang-format off
-static const uint8_t rgbmatrix_buff[]   = {13, 15, 16, 24, 25, 26, 29, 37, 33, 34, 35, 43, 2, 5, 6, 9};
-static const uint8_t sixth_gear_buff[]  = {6, 13, 15, 16, 25, 26, 34};
-static uint8_t rgb_hsvs[RGB_HSV_MAX][2] = {
-    {0,   255},
-    {64,  255},
-    {128, 255},
-    {192, 255},
-    {0,   0  },
+
+/* Curated RGB effect mode list for MODE+/MODE- cycling.
+ * Uses enum constants so the IDs are always correct regardless of which
+ * built-in effects are enabled or disabled in keyboard.json.
+ * RGBR_PLAY (the custom recording playback mode) is intentionally excluded. */
+static const uint8_t rgbmatrix_buff[] = {
+    RGB_MATRIX_SOLID_COLOR,
+    RGB_MATRIX_ALPHAS_MODS,
+    RGB_MATRIX_GRADIENT_UP_DOWN,
+    RGB_MATRIX_GRADIENT_LEFT_RIGHT,
+    RGB_MATRIX_BREATHING,
+    RGB_MATRIX_BAND_SAT,
+    RGB_MATRIX_BAND_VAL,
+    RGB_MATRIX_BAND_PINWHEEL_SAT,
+    RGB_MATRIX_BAND_PINWHEEL_VAL,
+    RGB_MATRIX_BAND_SPIRAL_SAT,
+    RGB_MATRIX_BAND_SPIRAL_VAL,
+    RGB_MATRIX_CYCLE_ALL,
+    RGB_MATRIX_CYCLE_LEFT_RIGHT,
+    RGB_MATRIX_CYCLE_UP_DOWN,
+    RGB_MATRIX_RAINBOW_MOVING_CHEVRON,
+    RGB_MATRIX_CYCLE_OUT_IN,
+    RGB_MATRIX_CYCLE_OUT_IN_DUAL,
+    RGB_MATRIX_CYCLE_PINWHEEL,
+    RGB_MATRIX_CYCLE_SPIRAL,
+    RGB_MATRIX_DUAL_BEACON,
+    RGB_MATRIX_RAINBOW_BEACON,
+    RGB_MATRIX_RAINBOW_PINWHEELS,
+    RGB_MATRIX_RAINDROPS,
+    RGB_MATRIX_JELLYBEAN_RAINDROPS,
+    RGB_MATRIX_HUE_BREATHING,
+    RGB_MATRIX_HUE_PENDULUM,
+    RGB_MATRIX_HUE_WAVE,
+    RGB_MATRIX_PIXEL_RAIN,
+    RGB_MATRIX_PIXEL_FLOW,
+    RGB_MATRIX_PIXEL_FRACTAL,
+    RGB_MATRIX_TYPING_HEATMAP,
+    RGB_MATRIX_DIGITAL_RAIN,
+    RGB_MATRIX_SOLID_REACTIVE_SIMPLE,
+    RGB_MATRIX_SOLID_REACTIVE,
+    RGB_MATRIX_SOLID_REACTIVE_WIDE,
+    RGB_MATRIX_SOLID_REACTIVE_MULTIWIDE,
+    RGB_MATRIX_SOLID_REACTIVE_CROSS,
+    RGB_MATRIX_SOLID_REACTIVE_MULTICROSS,
+    RGB_MATRIX_SOLID_REACTIVE_NEXUS,
+    RGB_MATRIX_SOLID_REACTIVE_MULTINEXUS,
+    RGB_MATRIX_SPLASH,
+    RGB_MATRIX_MULTISPLASH,
+    RGB_MATRIX_SOLID_SPLASH,
+    RGB_MATRIX_SOLID_MULTISPLASH,
 };
+
+/* Per-hue saturation ramp table: rgb_sats[hue_index][sat_level].
+ * Each row provides 5 saturation values from desaturated (white-ish) to fully
+ * saturated, hand-tuned to compensate for this keyboard's green-heavy WS2812
+ * LEDs. The LEDs have a disproportionately strong green channel, so:
+ *   - Green and Cyan hues start at saturation 0 at the low end (otherwise the
+ *     "white" tint looks green instead of neutral).
+ *   - Red, Orange, Yellow, and blue-family hues use higher base saturation
+ *     values (127–166) to push past the green bias and produce a convincing
+ *     desaturated/white tone at the lowest level.
+ * These values were determined empirically by visual inspection of the actual
+ * hardware output. */
+static uint8_t rgb_sats[RGB_HUE_MAX][RGB_SAT_MAX] = {
+    {127, 220, 238, 245, 255},  // Red      (hue=0)    white→pure red
+    {144, 235, 245, 250, 255},  // Orange   (hue=5)    white→pure orange
+    {166, 238, 247, 251, 255},  // Yellow   (hue=10)   white→pure yellow
+    {  0, 200, 230, 245, 255},  // Green    (hue=85)   greenish-white→pure green
+    {  0, 200, 230, 245, 255},  // Cyan     (hue=128)  greenish-white→pure cyan
+    {126, 220, 238, 245, 255},  // Blue     (hue=170)  white→pure blue
+    {127, 220, 238, 245, 255},  // BluePurp (hue=191)  white→pure blue-purple
+    {127, 220, 238, 245, 255},  // Purple   (hue=213)  white→pure purple
+    {127, 220, 238, 245, 255},  // Magenta  (hue=234)  white→pure magenta
+};
+
+/* Hue values for the 9-color palette, indexed by hue_index.
+ * These are QMK HSV hue values (0-255 range). */
+static uint8_t rgb_hues[RGB_HUE_MAX] = {0, 5, 10, 85, 128, 170, 191, 213, 234};
 
 //clang-format on
 static rgbrec_info_t rgbrec_info = {
@@ -251,20 +320,24 @@ uint8_t find_index(void) {
     return 0;
 }
 
+/* Read the current saturation index from EEPROM (CONFINFO_EECONFIG_ADDR + 4).
+ * Returns 0 if the stored value is out of range (e.g. blank EEPROM). */
 uint8_t record_color_read_data(void) {
-    uint8_t hs_mode    = find_index();
-    const uint8_t *ptr = (const uint8_t *)(((uint32_t)CONFINFO_EECONFIG_ADDR + 4) + hs_mode);
+    const uint8_t *ptr = (const uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 4);
     uint8_t hs_c       = eeprom_read_byte(ptr);
 
-    if (hs_c > RGB_HSV_MAX) {
+    if (hs_c >= RGB_SAT_MAX) {
         return 0;
     } else {
         return hs_c;
     }
 }
 
+/* Cycle forward through rgbmatrix_buff[]. Preserves the current HSV color
+ * across mode changes. Updates *last_mode for EEPROM persistence. */
 void record_rgbmatrix_increase(uint8_t *last_mode) {
     uint8_t index;
+    HSV current_hsv = rgb_matrix_get_hsv();
 
     index = find_index();
     if (rgbrec_info.state != RGBREC_STATE_ON) {
@@ -272,41 +345,105 @@ void record_rgbmatrix_increase(uint8_t *last_mode) {
     }
     *last_mode = rgbmatrix_buff[index];
     rgb_matrix_mode(rgbmatrix_buff[index]);
-    //record_color_hsv(false);
-    uint8_t rgb_hsv_index =  record_color_read_data();
-    rgb_matrix_sethsv(rgb_hsvs[rgb_hsv_index][0], rgb_hsvs[rgb_hsv_index][1], rgb_matrix_get_val());
+    rgb_matrix_sethsv(current_hsv.h, current_hsv.s, current_hsv.v);
 }
 
-uint8_t record_color_hsv(bool status) {
-    uint8_t temp;
-    uint8_t rgb_hsv_index = record_color_read_data();
+/* Cycle backward through rgbmatrix_buff[]. Mirror of record_rgbmatrix_increase()
+ * so that MODE- reverses MODE+ through the same curated list. */
+void record_rgbmatrix_decrease(uint8_t *last_mode) {
+    uint8_t index;
+    uint8_t count = sizeof(rgbmatrix_buff) / sizeof(rgbmatrix_buff[0]);
+    HSV current_hsv = rgb_matrix_get_hsv();
 
-    for (uint8_t i = 0; i < (sizeof(sixth_gear_buff) / sizeof(sixth_gear_buff[0])); i++) {
-        if (rgb_matrix_get_mode() == sixth_gear_buff[i]) {
-            temp = RGB_HSV_MAX - 2;
-            break;
-        } else if (i == (sizeof(sixth_gear_buff) / sizeof(sixth_gear_buff[0]) - 1)) {
-            temp = RGB_HSV_MAX - 1;
-        }
+    index = find_index();
+    if (rgbrec_info.state != RGBREC_STATE_ON) {
+        index = (index + count - 1) % count;
     }
+    *last_mode = rgbmatrix_buff[index];
+    rgb_matrix_mode(rgbmatrix_buff[index]);
+    rgb_matrix_sethsv(current_hsv.h, current_hsv.s, current_hsv.v);
+}
+
+/* Cycle saturation level up (status=true) or down (status=false) within the
+ * current hue's saturation ramp (rgb_sats[hue][0..4]). Uses the hardware-
+ * corrected saturation values rather than linear steps. Returns 0xFF if
+ * already at min/max. Persists the new sat index to EEPROM. */
+uint8_t record_color_hsv(bool status) {
+    uint8_t rgb_sat_index = record_color_read_data();
+    uint8_t rgb_hue_index = record_color_hue_read_data();
 
     if (status) {
-        if (rgb_hsv_index != temp)
-            rgb_hsv_index = (rgb_hsv_index + 1);
+        if (rgb_sat_index < (RGB_SAT_MAX - 1))
+            rgb_sat_index = (rgb_sat_index + 1);
         else
             return 0xFF;
     } else {
-        if (rgb_hsv_index)
-            rgb_hsv_index = (rgb_hsv_index - 1);
+        if (rgb_sat_index)
+            rgb_sat_index = (rgb_sat_index - 1);
         else
             return 0xFF;
     }
 
-    rgb_matrix_sethsv(rgb_hsvs[rgb_hsv_index][0], rgb_hsvs[rgb_hsv_index][1], rgb_matrix_get_val());
+    rgb_matrix_sethsv(rgb_matrix_get_hsv().h, rgb_sats[rgb_hue_index][rgb_sat_index], rgb_matrix_get_val());
 
-    uint8_t *ptr = (uint8_t *)(((uint32_t)CONFINFO_EECONFIG_ADDR + 4) + find_index());
-    eeprom_write_byte(ptr, rgb_hsv_index);
-    return rgb_hsv_index;
+    uint8_t *ptr = (uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 4);
+    eeprom_write_byte(ptr, rgb_sat_index);
+    return rgb_sat_index;
+}
+
+/* Read the current hue index from EEPROM (CONFINFO_EECONFIG_ADDR + 5).
+ * Returns 0 if the stored value is out of range (e.g. blank EEPROM). */
+uint8_t record_color_hue_read_data(void) {
+    const uint8_t *ptr = (const uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 5);
+    uint8_t hs_c       = eeprom_read_byte(ptr);
+
+    if (hs_c >= RGB_HUE_MAX) {
+        return 0;
+    } else {
+        return hs_c;
+    }
+}
+
+/* Cycle hue forward (status=true) or backward (status=false) through
+ * rgb_hues[]. Also applies the matching saturation from rgb_sats[][] so
+ * that switching hues keeps the same perceptual saturation level.
+ * Persists the new hue index to EEPROM. */
+uint8_t record_color_hue(bool status) {
+    uint8_t rgb_hue_index = record_color_hue_read_data();
+    uint8_t rgb_sat_index = record_color_read_data();
+
+    if (status) {
+        rgb_hue_index = (rgb_hue_index + 1) % RGB_HUE_MAX;
+    } else {
+        rgb_hue_index = (rgb_hue_index + RGB_HUE_MAX - 1) % RGB_HUE_MAX;
+    }
+
+    rgb_matrix_sethsv(rgb_hues[rgb_hue_index], rgb_sats[rgb_hue_index][rgb_sat_index], rgb_matrix_get_val());
+
+    uint8_t *ptr = (uint8_t *)((uint32_t)CONFINFO_EECONFIG_ADDR + 5);
+    eeprom_write_byte(ptr, rgb_hue_index);
+    return rgb_hue_index;
+}
+
+/* Look up the index in rgb_hues[] matching the given QMK hue value.
+ * Used by eeconfig_confinfo_default() to sync EEPROM with keyboard.json.
+ * Returns 0 (Red) if no exact match is found. */
+uint8_t find_hue_index(uint8_t hue) {
+    for (uint8_t i = 0; i < RGB_HUE_MAX; i++) {
+        if (rgb_hues[i] == hue) return i;
+    }
+    return 0;
+}
+
+/* Find the highest saturation index in rgb_sats[hue_index][] whose value
+ * does not exceed the given target sat. Used to map a continuous QMK
+ * saturation value to the closest discrete step in our hardware-corrected
+ * ramp. Returns 0 if no entry qualifies. */
+uint8_t find_sat_index(uint8_t hue_index, uint8_t sat) {
+    for (int8_t i = RGB_SAT_MAX - 1; i >= 0; i--) {
+        if (rgb_sats[hue_index][i] <= sat) return (uint8_t)i;
+    }
+    return 0;
 }
 
 bool rk_bat_req_flag;

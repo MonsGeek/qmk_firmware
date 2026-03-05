@@ -50,7 +50,8 @@
 #define HS_YELLOW       0x2BFF
 
 #define LASET_MOD_NO    0xFF
-#define RGB_HSV_MAX     5
+#define RGB_SAT_MAX     5       /* Number of discrete saturation steps per hue */
+#define RGB_HUE_MAX     9       /* Number of hues in the colour palette */
 #define ________        HS_BLACK
 
 #ifndef RGB_RECORD_HS_LISTS
@@ -78,6 +79,21 @@ void rgbrec_init(uint8_t channel);
 bool rgbrec_is_started(void);
 void eeconfig_init_user_datablock(void);
 bool rgbrec_register_record(uint16_t keycode, keyrecord_t *record);
-void record_rgbmatrix_increase(uint8_t *last_mode);
-uint8_t record_color_hsv(bool status);
+
+/* --- Mode cycling ------------------------------------------------------- */
+void record_rgbmatrix_increase(uint8_t *last_mode);   /* MODE+ through curated list */
+void record_rgbmatrix_decrease(uint8_t *last_mode);   /* MODE- through curated list */
+
+/* --- Saturation cycling (hardware-corrected per hue) -------------------- */
+uint8_t record_color_read_data(void);                 /* Read sat index from EEPROM */
+uint8_t record_color_hsv(bool status);                /* SAT+/SAT- within current hue */
+
+/* --- Hue cycling (9-color palette) -------------------------------------- */
+uint8_t record_color_hue_read_data(void);             /* Read hue index from EEPROM */
+uint8_t record_color_hue(bool status);                /* HUE+/HUE- through palette */
+
+/* --- Index helpers (for EEPROM ↔ keyboard.json sync) -------------------- */
+uint8_t find_hue_index(uint8_t hue);                  /* QMK hue → palette index */
+uint8_t find_sat_index(uint8_t hue_index, uint8_t sat); /* QMK sat → ramp index */
+
 void query(void);

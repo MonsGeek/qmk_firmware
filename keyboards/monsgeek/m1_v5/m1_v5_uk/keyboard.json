@@ -134,9 +134,11 @@
             "typing_heatmap": true
         },
         "default": {
-            "animation": "cycle_left_right",
+            "animation": "solid_color",
+            "hue": 234,
+            "sat": 255,
             "speed": 255,
-            "val": 104
+            "val": 200
         },
         "driver": "ws2812",
         "layout": [
@@ -224,7 +226,7 @@
             {"matrix": [5,  2], "x": 32,  "y": 64, "flags": 4},
             {"matrix": [5,  6], "x": 96,  "y": 64, "flags": 4}
         ],
-        "max_brightness": 104,
+        "max_brightness": 200,
         "sleep": true,
         "speed_steps": 51,
         "val_steps": 26
