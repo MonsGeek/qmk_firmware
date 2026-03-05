@@ -219,7 +219,7 @@ void suspend_wakeup_init_kb(void) {
 bool lpwr_is_allow_timeout_hook(void) {
 
     if (wireless_get_current_devs() == DEVS_USB) {
-        return false;
+        return (USB_DRIVER.state == USB_SUSPENDED);
     }
 
     return true;
